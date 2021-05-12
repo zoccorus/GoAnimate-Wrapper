@@ -1,50 +1,49 @@
-const voices = require("./info").voices;
-const qs = require("querystring");
-const brotli = require("brotli");
-const https = require("https");
+const loadPost = require('../request/post_body');
+const mp3Duration = require('mp3-duration');
+const voices = require('./info').voices;
+const asset = require('../asset/main');
+const get = require('../request/get');
+const qs = require('querystring');
+const brotli = require('brotli');
 const md5 = require("js-md5");
 const base64 = require("js-base64");
-const http = require("http");
+const https = require('https');
+const http = require('http');
 
-// Fallback option for compatibility between Wrapper and https://github.com/Windows81/Text2Speech-Haxxor-JS.
-let get;
-try {
-	get = require("../misc/get");
-} catch {
-	get = require("./get");
-}
-
-module.exports = (voiceName, text) => {
-	return new Promise(async (res, rej) => {
+function processVoice(voiceName, text) {
+	return new Promise((res, rej) => {
 		const voice = voices[voiceName];
 		switch (voice.source) {
-			case "polly+azure": {
-				var req = https.request({
-					hostname: "voicemaker.in",
-					port: "443",
-					path: "/voice/standard",
-					method: "POST",
-					headers: {
-						"content-type": "application/json",
-						cookie: "__stripe_mid=0a37ccc8-cc13-474d-97da-aa0a5f9f47398bdf7a; __cfduid=d022698980296baa7fa7313e4cf44f5631616037532; connect.sid=s%3AgvSXg1g2nPq-07vxD25_STJDMnFVSydC.CnUtht28g%2BsJ8NMGhRQeB0oBrs5W5kCD8pOI4MPJeDw; __stripe_sid=2dd1624f-ae48-472a-b598-b7d5cab469ecc72729",
-						"csrf-token": "",
-						origin: "https://voicemaker.in",
-						referer: "https://voicemaker.in/",
-						"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.101 Safari/537.36",
-						"x-requested-with": "XMLHttpRequest",
+			case "polly": {
+				https.get('https://voicemaker.in/', r => {
+					const cookie = r.headers['set-cookie'];
+					var req = https.request({
+						hostname: "voicemaker.in",
+						port: "443",
+						path: "/voice/standard",
+						method: "POST",
+						headers: {
+							"content-type": "application/json",
+							cookie: cookie,
+							"csrf-token": "",
+							origin: "https://voicemaker.in",
+							referer: "https://voicemaker.in/",
+							"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.101 Safari/537.36",
+							"x-requested-with": "XMLHttpRequest",
+						},
 					},
-				},
-				(r) => {
-					var buffers = [];
-					r.on("data", (b) => buffers.push(b));
-					r.on("end", () => {
-						var json = JSON.parse(Buffer.concat(buffers));
-						get(`https://voicemaker.in/${json.path}`).then(res).catch(rej);
+					(r) => {
+						var buffers = [];
+						r.on("data", (b) => buffers.push(b));
+						r.on("end", () => {
+							var json = JSON.parse(Buffer.concat(buffers));
+							get(`https://voicemaker.in${json.path.replace(".", "")}`).then(res).catch(rej);
+						});
+						r.on("error", rej);
 					});
-					r.on("error", rej);
+					req.write(`{"Engine":"${voice.polly_engine}","Provider":"ai101","OutputFormat":"mp3","VoiceId":"${voice.arg}","LanguageCode":"${voice.language}-${voice.country}","SampleRate":"22050","effect":"default","master_VC":"advanced","speed":"0","master_volume":"0","pitch":"0","Text":"${text}","TextType":"text","fileName":""}`);
+					req.end();
 				});
-				req.write(`{"Engine":"${voice.speech_engine}","Provider":"${voice.ai}","OutputFormat":"mp3","VoiceId":"${voice.arg}","LanguageCode":"${voice.language}-${voice.country}","SampleRate":"${voice.samplerate}","effect":"default","master_VC":"advanced","speed":"0","master_volume":"0","pitch":"0","Text":"${text}","TextType":"text","fileName":""}`);
-				req.end();
 				break;
 			}
 			/* WARNING: NUANCE TTS API HAS BACKGROUND MUSIC */
@@ -117,27 +116,6 @@ module.exports = (voiceName, text) => {
 							"User-Agent":
 								"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.100 Safari/537.36",
 						},
-					},
-					(r) => {
-						var buffers = [];
-						r.on("data", (d) => buffers.push(d));
-						r.on("end", () => res(Buffer.concat(buffers)));
-						r.on("error", rej);
-					}
-				);
-				break;
-			}
-			case "voiceforge": {
-				/* Special thanks to ItsCrazyScout for helping us find the new VoiceForge link! */
-				var q = qs.encode({
-					voice: voice.arg,
-					msg: text,
-				});
-				http.get(
-					{
-						host: "localhost",
-						port: "8181",
-						path: `/vfproxy/speech.php?${q}`,
 					},
 					(r) => {
 						var buffers = [];
@@ -246,12 +224,11 @@ module.exports = (voiceName, text) => {
                         path: "/AcaBox/dovaas.php",
                         method: "POST",
                         headers: {
-							"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-							Cookie: "AcaBoxLogged=logged; AcaBoxUsername=goaniwrap; acabox=p21jj8f3gv30hhv0mruvt1fsm3; AcaBoxFirstname=Keegan",
+                            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+							Cookie: "AcaBoxLogged=logged; AcaBoxUsername=goaniwrap; acabox=92s39r5vu676g5ekqehbu2o0f2; AcaBoxFirstname=Keegan",
 							Origin: "https://acapela-box.com",
-							Referer: "https://acapela-box.com/AcaBox/index.php",
+                            Referer: "https://acapela-box.com/AcaBox/index.php",
 							"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.101 Safari/537.36",
-							"X-Requested-With": "XMLHttpRequest",
                         },
                     },
                     (r) => {
@@ -284,6 +261,26 @@ module.exports = (voiceName, text) => {
 					{
 						host: "voice.reverso.net",
 						path: `/RestPronunciation.svc/v1/output=json/GetVoiceStream/voiceName=${voice.arg}?${q}`,
+					},
+					(r) => {
+						var buffers = [];
+						r.on("data", (d) => buffers.push(d));
+						r.on("end", () => res(Buffer.concat(buffers)));
+						r.on("error", rej);
+					}
+				);
+				break;
+			}
+			case "voiceforge": {
+				/* Special thanks to ItsCrazyScout for helping us find the new VoiceForge link and being kind enough to host xom's VFProxy on his site! */
+				var q = qs.encode({
+					voice: voice.arg,
+					msg: text,
+				});
+				http.get(
+					{
+						host: "seamus-server.tk",
+						path: `/vfproxy/speech.php?${q}`,
 					},
 					(r) => {
 						var buffers = [];
@@ -441,77 +438,22 @@ module.exports = (voiceName, text) => {
 				);
 				break;
 			}
-			/*
-			case "sestek": {
-				https.get(
-					{
-						hostname: "ttsdemo.sestek.com",
-						path: "/Demo.aspx",
-					},
-					(r) => {
-						var cookie = r.headers["set-cookie"];
-						https.get(
-							{
-								hostname: "ttsdemo.sestek.com",
-								headers: { Cookie: cookie },
-								path: "/Demo.aspx",
-							},
-							(r) => {
-								var buffers = [];
-								r.on("data", (d) => buffers.push(d));
-								r.on("end", () => {
-									html = Buffer.concat(buffers).toString();
-									var vs = /__VIEWSTATE" value="([^"]+)/.exec(html);
-									var vg = /__VIEWSTATEGENERATOR" value="([^"]+)/.exec(html);
-									var ev = /__EVENTVALIDATION" value="([^"]+)/.exec(html);
-
-									if (vs && ev && vg) {
-										vs = vs[1];
-										vg = vg[1];
-										ev = ev[1];
-									} else rej();
-
-									var q = qs.encode({
-										__EVENTTARGET: "Button1",
-										__EVENTARGUMENT: "",
-										__VIEWSTATE: vs,
-										__EVENTVALIDATION: ev,
-										__VIEWSTATEGENERATOR: vg,
-										ddlVoices: voice.arg,
-										TextBox1: text,
-									});
-
-									const req = https.request(
-										{
-											hostname: "ttsdemo.sestek.com",
-											path: "/demo.aspx",
-											method: "POST",
-											headers: {
-												cookie: cookie,
-												"Content-Type": "application/x-www-form-urlencoded",
-												"Content-Length": q.length,
-											},
-										},
-										(r) => {
-											var buffers = [];
-											r.on("data", (d) => buffers.push(d));
-											r.on("end", () => {
-												console.log(r.headers.location);
-												get(r.headers.location).then(res).catch(rej);
-											});
-											r.on("error", rej);
-										}
-									);
-									req.end(q);
-								});
-								r.on("error", rej);
-							}
-						);
-					}
-				);
-				break;
-			}
-			*/
 		}
 	});
-};
+}
+
+module.exports = function (req, res, url) {
+	if (req.method != 'POST' || url.path != '/goapi/convertTextToSoundAsset/') return;
+	loadPost(req, res).then(data => {
+		processVoice(data.voice, data.text).then(buffer => {
+			mp3Duration(buffer, (e, duration) => {
+				if (e || !duration) return res.end(1 + process.env.FAILURE_XML);
+
+				const title = `[${voices[data.voice].desc}] ${data.text}`;
+				const id = asset.saveLocal(buffer, data.presaveId, '-tts.mp3');
+				res.end(`0<response><asset><id>${id}</id><enc_asset_id>${id}</enc_asset_id><type>sound</type><subtype>tts</subtype><title>${title}</title><published>0</published><tags></tags><duration>${1e3 * duration}</duration><downloadtype>progressive</downloadtype><file>${id}</file></asset></response>`)
+			});
+		});
+	});
+	return true;
+}
